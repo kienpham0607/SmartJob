@@ -1,0 +1,7 @@
+import { createBaseApp, finishApp } from '@smartjob/shared/server';
+import { routes } from './routes/index.js';
+export function createApp() {
+  const app = createBaseApp('recommendation-service');
+  app.use(routes);
+  return finishApp(app);
+}

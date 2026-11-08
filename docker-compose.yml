@@ -1,0 +1,185 @@
+# Stack đầy đủ: MongoDB + 4 service + API Gateway + frontend (nginx).
+# Cần file .env (npm.cmd run setup). Chạy: docker compose up -d --build
+# Seed demo: docker compose --profile seed run --rm seed
+# Giao diện: http://localhost:8080  |  Gateway (tuỳ chọn): http://localhost:3000
+
+x-backend-environment: &backend-environment
+  LISTEN_HOST: 0.0.0.0
+  MONGODB_URI: mongodb://mongodb:27017
+  USER_SERVICE_URL: http://user-service:3001
+  JOB_SERVICE_URL: http://job-service:3002
+  APPLICATION_SERVICE_URL: http://application-service:3003
+  RECOMMENDATION_SERVICE_URL: http://recommendation-service:3004
+  FRONTEND_ORIGIN: http://localhost:8080,http://127.0.0.1:8080
+  GATEWAY_PORT: '3000'
+  USER_PORT: '3001'
+  JOB_PORT: '3002'
+  APPLICATION_PORT: '3003'
+  RECOMMENDATION_PORT: '3004'
+
+x-backend: &backend
+  build:
+    context: .
+    target: backend
+  env_file:
+    - .env
+  environment:
+    <<: *backend-environment
+  restart: unless-stopped
+  depends_on:
+    mongodb:
+      condition: service_healthy
+
+services:
+  mongodb:
+    image: mongo:8
+    volumes:
+      - smartjob_mongo:/data/db
+    # Publish tùy chọn để Compass/tool trên host; trong stack service dùng mongodb:27017.
+    ports:
+      - '127.0.0.1:27018:27017'
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD', 'mongosh', '--quiet', '--eval', "db.adminCommand('ping').ok"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  user-service:
+    <<: *backend
+    command: ['node', 'services/user-service/src/index.js']
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:3001/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 8
+      start_period: 15s
+
+  job-service:
+    <<: *backend
+    command: ['node', 'services/job-service/src/index.js']
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:3002/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 8
+      start_period: 15s
+
+  application-service:
+    <<: *backend
+    command: ['node', 'services/application-service/src/index.js']
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      user-service:
+        condition: service_healthy
+      job-service:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:3003/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 8
+      start_period: 15s
+
+  recommendation-service:
+    <<: *backend
+    command: ['node', 'services/recommendation-service/src/index.js']
+    depends_on:
+      user-service:
+        condition: service_healthy
+      job-service:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:3004/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 8
+      start_period: 15s
+
+  api-gateway:
+    <<: *backend
+    command: ['node', 'api-gateway/src/index.js']
+    ports:
+      - '3000:3000'
+    depends_on:
+      user-service:
+        condition: service_healthy
+      job-service:
+        condition: service_healthy
+      application-service:
+        condition: service_healthy
+      recommendation-service:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 8
+      start_period: 10s
+
+  frontend:
+    build:
+      context: .
+      target: frontend
+      args:
+        VITE_API_URL: /api
+    ports:
+      - '8080:80'
+    depends_on:
+      api-gateway:
+        condition: service_healthy
+    restart: unless-stopped
+
+  seed:
+    profiles: ['seed']
+    build:
+      context: .
+      target: backend
+    env_file:
+      - .env
+    environment:
+      <<: *backend-environment
+    command: ['node', 'scripts/seed.js']
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      user-service:
+        condition: service_healthy
+      job-service:
+        condition: service_healthy
+    restart: 'no'
+
+volumes:
+  smartjob_mongo:

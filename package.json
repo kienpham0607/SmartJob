@@ -1,0 +1,40 @@
+{
+  "name": "smartjob",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "workspaces": [
+    "frontend",
+    "api-gateway",
+    "services/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "predev": "npm run check:env && npm run check:db",
+    "setup": "node scripts/setup.js",
+    "dev": "concurrently --kill-others -n gateway,users,jobs,applications,recommendations,web -c cyan,blue,green,yellow,magenta,white \"npm run dev -w api-gateway\" \"npm run dev -w services/user-service\" \"npm run dev -w services/job-service\" \"npm run dev -w services/application-service\" \"npm run dev -w services/recommendation-service\" \"npm run dev -w frontend\"",
+    "build": "npm run build -w frontend",
+    "test": "node --test --test-concurrency=1 tests/*.test.js",
+    "test:ui": "playwright test",
+    "check:db": "node scripts/db-check.js",
+    "check:env": "node scripts/check-env.js",
+    "format": "prettier --write .",
+    "seed": "node scripts/seed.js",
+    "health": "node scripts/health.js",
+    "smoke": "node scripts/smoke.js",
+    "db:demo": "node scripts/demo-mongo.js",
+    "docker:up": "docker compose up -d --build",
+    "docker:down": "docker compose down",
+    "docker:seed": "docker compose --profile seed run --rm seed",
+    "docker:logs": "docker compose logs -f --tail=100"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.64.1",
+    "concurrently": "^9.2.1",
+    "mongodb-memory-server": "^10.3.0",
+    "prettier": "^3.9.10"
+  }
+}
